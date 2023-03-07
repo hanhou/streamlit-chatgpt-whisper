@@ -1,0 +1,7 @@
+environment_version: 1
+credentials:
+- type: api-key
+  id: vtgoOy6b2L8zre
+  description: openai
+  key: API_KEY
+  secret: API_SECRET
