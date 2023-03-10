@@ -17,7 +17,7 @@ import pykakasi
 from audio_recorder_streamlit import audio_recorder
 from streamlit_chat import message
 
-debug = True
+debug = False
 
 st.set_page_config(layout="wide")
 
