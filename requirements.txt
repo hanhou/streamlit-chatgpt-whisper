@@ -5,3 +5,4 @@ gtts
 pykakasi
 audio-recorder-streamlit
 streamlit_nested_layout
+streamlit_chat
