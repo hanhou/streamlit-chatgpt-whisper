@@ -6,3 +6,4 @@
 *.mp3
 *.pkl
 code/__pycache__/st_custom_components.cpython-39.pyc
+.streamlit/secrets.toml

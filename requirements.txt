@@ -2,3 +2,6 @@ streamlit
 openai
 wave
 gtts
+pykakasi
+audio-recorder-streamlit
+streamlit_nested_layout
