@@ -17,6 +17,7 @@ import pykakasi
 from audio_recorder_streamlit import audio_recorder
 from streamlit_chat import message
 
+debug = True
 
 st.set_page_config(layout="wide")
 
@@ -25,10 +26,20 @@ kks = pykakasi.kakasi()
 # Set the model engine and your OpenAI API key
 openai.api_key = os.getenv("API_KEY")
 
+background_promt = '''I am Miss Yixi. You are chatGPT. I am learning Japanese. Please always chat with me in and only in simple Japanese. 
+                      
+                      Here are some facts about me: I'm from Xi'an, China. My dog's name is rice pudding. My boyfriend is Mr. Han, who is from SiChuan. 
+                      
+                      Before that, here are some background of our previous chats:
+                      As an AI language partner, chatGPT chatted with Yixi in simple Japanese to help her learn the language. They talked about Yixi's dog named Rice Pudding and that chatGPT did not know her boyfriend's name but was happy to learn with her. Lastly, Yixi shared that her boyfriend's name is Han.
+                      
+                      Let's continue our following conversation.
+                      Each of your new answer should be less than 30 words. Only Japanese writing, no English pronouciations.
+                      Always first check my language and explain to me if I make any grammrial or usage error. Then answer my question.
+                      \n'''
 
 
-@st.cache_data(max_entries=100)
-def get_transcription(file, lang=['ja'], filelen=None):
+def get_transcription(file, lang=['ja']):
     with open(file, "rb") as f:
         try:
             transcription = openai.Audio.transcribe("whisper-1", f, language=lang).text
@@ -37,7 +48,7 @@ def get_transcription(file, lang=['ja'], filelen=None):
     return transcription
 
 
-@st.cache_data(max_entries=100)
+@st.cache_data(max_entries=100, show_spinner=False)
 def ChatGPT(user_query, model="gpt-3.5-turbo"):
     ''' 
     This function uses the OpenAI API to generate a response to the given 
@@ -119,35 +130,37 @@ class Chat:
         if field == 'A_zh':
             return dict(font_size=15, color='blue', col=self.col_dialog.columns([1, 2])[1] if container is None else container   , other_styles='font-weight:bold')
     
-    def add(self, field, text, **kwarg):
+    def add(self, field, text):
         if field == 'Q':
             self.length += 1
             
         self.qa.loc[self.length, field] = text
-        
-        show_markdown(text, **self._gen_setting(field, **kwarg))
-        
+                
 
     def show_history(self):
         if not len(self.qa): return
         
-        for row in self.qa[::-1][1:].itertuples():
-            show_markdown(row.A, **self._gen_setting('A'))
-            if st.session_state.if_chinese:
-                if pd.isna(row.A_zh):
-                    response = ChatGPT('Translate to Simplified Chinese:' + row.A)
-                    self.qa.loc[row.Index, 'A_zh'] = response.choices[0].message.content
+        with self.col_dialog:
+            for row in self.qa[::-1][:].itertuples():
+                message(row.A, is_user=True, avatar_style='bottts', key=np.random.rand()) 
+                message(row.Q, avatar_style = "fun-emoji", key=np.random.rand())  # align's the message to the right
+                        
+            # show_markdown(row.A, **self._gen_setting('A'))
+            # if st.session_state.if_chinese:
+            #     if pd.isna(row.A_zh):
+            #         response = ChatGPT('Translate to Simplified Chinese:' + row.A)
+            #         self.qa.loc[row.Index, 'A_zh'] = response.choices[0].message.content
 
-                show_markdown(self.qa.loc[row.Index, 'A_zh'], **self._gen_setting('A_zh'))
+            #     show_markdown(self.qa.loc[row.Index, 'A_zh'], **self._gen_setting('A_zh'))
 
-            show_markdown(row.Q, **self._gen_setting('Q'))
-            if st.session_state.if_chinese:
+            # show_markdown(row.Q, **self._gen_setting('Q'))
+            # if st.session_state.if_chinese:
                 
-                if pd.isna(row.Q_zh):
-                    response = ChatGPT('Translate to Simplified Chinese:' + row.Q)
-                    self.qa.loc[row.Index, 'Q_zh'] = response.choices[0].message.content
+            #     if pd.isna(row.Q_zh):
+            #         response = ChatGPT('Translate to Simplified Chinese:' + row.Q)
+            #         self.qa.loc[row.Index, 'Q_zh'] = response.choices[0].message.content
 
-                show_markdown(self.qa.loc[row.Index, 'Q_zh'], **self._gen_setting('Q_zh'))
+            #     show_markdown(self.qa.loc[row.Index, 'Q_zh'], **self._gen_setting('Q_zh'))
                 
 
     def generate_query(self):
@@ -158,7 +171,8 @@ class Chat:
             if not pd.isna(row.A): 
                 query += f'chatGPT: {row.A}\n'
         
-        st.sidebar.write(query)
+        if debug:
+            st.sidebar.write(query)
         return query    
     
 def init():
@@ -166,6 +180,9 @@ def init():
     st.session_state.total_tokens = 0
     st.session_state.text_query = ''
     
+    if 'last_audio_len' not in st.session_state:
+        st.session_state.last_audio_len = 0
+
 
 def clear_text():
     st.session_state.text_query = st.session_state.text
@@ -210,10 +227,11 @@ if 'chat' not in st.session_state:
 st.sidebar.write(st.session_state.total_tokens)    
 
 
-col_dialog, _, col_hira, _ = st.columns([2, 0.2, 1, 0.5])
+col_dialog, _, col_hira, _ = st.columns([2, 0.4, 1, 0.1])
 st.session_state.chat.col_dialog = col_dialog
 st.session_state.chat.col_hira = col_hira
 
+user_query = None
 
 if audio_bytes:
     h_replay.audio(audio_bytes, format="audio/wav")
@@ -223,46 +241,70 @@ if audio_bytes:
     wav_file.setparams((2, 2, 44100, len(audio_bytes), 'NONE', 'not compressed'))
     wav_file.writeframes(audio_bytes)
     wav_file.close()
-    user_query = get_transcription('output.wav', lang=['ja'], filelen=os.path.getsize('output.wav')) # If size changes, redo transcribe
     
+    if st.session_state.last_audio_len != os.path.getsize('output.wav'):
+        user_query = get_transcription('output.wav', lang=['ja']) # If size changes, redo transcribe
+        st.session_state.last_audio_len = os.path.getsize('output.wav')
+    else:
+        user_query = None
 
-if st.session_state.text_query != ":q" or st.session_state.text_query != "":
+        
+if user_query is None and st.session_state.text_query != "":
     user_query = st.session_state.text_query
     
-    
+container_latest_answer = col_dialog.columns([1, 2])[1]
+container_latest_question = col_dialog.columns([2, 1])[0]
+st.session_state.chat.show_history()
+
 if user_query is not None and user_query != "":
+    
     st.session_state.text_query = ''
-    
-    container_answer = col_dialog.columns([1, 2])[1]
-    
+
     st.session_state.chat.add('Q', user_query)
     
     if st.session_state.if_chinese:
-        response = ChatGPT('Translate to Simplified Chinese:' + user_query)
-        st.session_state.chat.add('Q_zh', response.choices[0].message.content)
+        q_zh = ChatGPT('Translate this to Simplified Chinese:' + user_query).choices[0].message.content
+        st.session_state.chat.add('Q_zh', q_zh)
+        
+    with container_latest_question:
+        message(user_query, is_user=False, avatar_style='fun-emoji', key=np.random.rand())
+
     
     query = st.session_state.chat.generate_query()
     
     response = ChatGPT(query)
     response_text = response.choices[0].message.content
-    st.session_state.chat.add('A', response_text, container=container_answer)
+    st.session_state.chat.add('A', response_text)
     
     if st.session_state.if_chinese:        
-        response = ChatGPT('Translate to Simplified Chinese:' + response_text)
-        st.session_state.chat.add('A_zh', response.choices[0].message.content, container=container_answer)
-        
-    st.session_state.chat.show_history()
+        a_zh = ChatGPT('Translate this to Simplified Chinese:' + response_text).choices[0].message.content
+        st.session_state.chat.add('A_zh', a_zh)
+    
+    with container_latest_answer:    
+        message(response_text, is_user=True, avatar_style='bottts', key=np.random.rand())
+
 
     if if_hira:
-        show_kakasi(response_text, hira_font=15, orig_font=25, n_max_char_each_row=20, col=col_hira)
+        show_kakasi(user_query, hira_font=15, orig_font=20, n_max_char_each_row=20, col=col_hira)
+        col_hira.write('\n')
+        show_markdown(q_zh, font_size=20, color='blue', col=col_hira)
+        
+        for i in range(5): col_hira.write('\n')
+
+        show_kakasi(response_text, hira_font=15, orig_font=20, n_max_char_each_row=20, col=col_hira)
+        col_hira.write('\n')
+        show_markdown(a_zh, font_size=20, color='blue', col=col_hira)
+         
 
 
     # Create a TTS object
     tts = gTTS(response_text, lang='ja', slow=if_slow)
     tts.save('response.mp3')
-    autoplay_audio('response.mp3')
     
+    with col_hira:
+        st.audio('response.mp3')
+        autoplay_audio('response.mp3')
 
-    st.audio('response.mp3')
     
-st.session_state.chat.qa
+if debug:
+    st.session_state.chat.qa
